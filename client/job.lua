@@ -358,13 +358,17 @@ end)
 RegisterNetEvent('police:client:ImpoundVehicle', function(fullImpound, price)
     local coords = GetEntityCoords(cache.ped)
     local vehicle = lib.getClosestVehicle(coords)
-    if not vehicle or not DoesEntityExist(vehicle) then return end
 
-    local bodyDamage = math.ceil(GetVehicleBodyHealth(vehicle))
-    local engineDamage = math.ceil(GetVehicleEngineHealth(vehicle))
-    local totalFuel = GetVehicleFuelLevel(vehicle)
+    if not vehicle or not DoesEntityExist(vehicle) then
+        exports.qbx_core:Notify(locale('error.no_vehicle'), 'error')
+        return
+    end
 
-    if cache.vehicle or #(GetEntityCoords(cache.ped) - GetEntityCoords(vehicle)) > 5.0 then return end
+    if cache.vehicle or #(coords - GetEntityCoords(vehicle)) > 5.0 then
+        exports.qbx_core:Notify(locale('error.too_far'), 'error')
+        return
+    end
+
 
     if lib.progressCircle({
         duration = 5000,
@@ -397,12 +401,32 @@ RegisterNetEvent('police:client:ImpoundVehicle', function(fullImpound, price)
                 rot = vec3(-120.0, 0.0, 0.0)
             }
         },
-    })
-    then
+    }) then
         local plate = qbx.getVehiclePlate(vehicle)
-        TriggerServerEvent('police:server:Impound', plate, fullImpound, price, bodyDamage, engineDamage, totalFuel)
-        DeleteVehicle(vehicle)
-        exports.qbx_core:Notify(locale('success.impounded'), 'success')
+
+
+        TriggerServerEvent('police:server:Impound', plate, fullImpound, price,
+            math.ceil(GetVehicleBodyHealth(vehicle)),
+            math.ceil(GetVehicleEngineHealth(vehicle)),
+            GetVehicleFuelLevel(vehicle)
+        )
+
+        -- Request control of the vehicle for deletion
+        NetworkRequestControlOfEntity(vehicle)
+        local attempt = 0
+        while not NetworkHasControlOfEntity(vehicle) and attempt < 10 do
+            Citizen.Wait(100)
+            attempt = attempt + 1
+        end
+
+        -- Delete the vehicle if control is obtained
+        if NetworkHasControlOfEntity(vehicle) then
+            DeleteVehicle(vehicle)
+            DeleteEntity(vehicle)
+            exports.qbx_core:Notify(locale('success.impounded'), 'success')
+        else
+            exports.qbx_core:Notify(locale('error.no_control'), 'error')
+        end
     else
         exports.qbx_core:Notify(locale('error.canceled'), 'error')
     end
